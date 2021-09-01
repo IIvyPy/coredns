@@ -97,6 +97,9 @@ func (p *Proxy) Connect(ctx context.Context, state request.Request, opts options
 	}
 
 	pc.c.SetWriteDeadline(time.Now().Add(maxTimeout))
+	originId := state.Req.Id
+	state.Req.Id = dns.Id()
+	
 	if err := pc.c.WriteMsg(state.Req); err != nil {
 		pc.c.Close() // not giving it back
 		if err == io.EOF && cached {
@@ -114,6 +117,10 @@ func (p *Proxy) Connect(ctx context.Context, state request.Request, opts options
 			if err == io.EOF && cached {
 				return nil, ErrCachedClosed
 			}
+			if ret != nil{
+				ret.Id = originId
+			}
+			state.Req.Id
 			return ret, err
 		}
 		// drop out-of-order responses
@@ -121,7 +128,8 @@ func (p *Proxy) Connect(ctx context.Context, state request.Request, opts options
 			break
 		}
 	}
-
+	ret.Id = originId
+	state.Req.Id = originId
 	p.transport.Yield(pc)
 
 	rc, ok := dns.RcodeToString[ret.Rcode]
