@@ -95,25 +95,23 @@ func (p *Proxy) Connect(ctx context.Context, state request.Request, opts options
 	if pc.c.UDPSize < 512 {
 		pc.c.UDPSize = 512
 	}
-
+	
 	pc.c.SetWriteDeadline(time.Now().Add(maxTimeout))
+	// records the origin Id before upstream.	
+	originId := state.Req.Id
+	state.Req.Id = dns.Id()
+
 	if err := pc.c.WriteMsg(state.Req); err != nil {
 		pc.c.Close() // not giving it back
 		if err == io.EOF && cached {
-			return nil, ErrCachedClosed
-		}
-		return nil, err
-	}
-
-	var ret *dns.Msg
-	pc.c.SetReadDeadline(time.Now().Add(readTimeout))
-	for {
-		ret, err = pc.c.ReadMsg()
-		if err != nil {
-			pc.c.Close() // not giving it back
 			if err == io.EOF && cached {
 				return nil, ErrCachedClosed
 			}
+			// recovery the origin Id after upstream.
+			if ret != nil{
+				ret.Id = originId
+			}
+			state.Req.Id = originId
 			return ret, err
 		}
 		// drop out-of-order responses
@@ -121,7 +119,9 @@ func (p *Proxy) Connect(ctx context.Context, state request.Request, opts options
 			break
 		}
 	}
-
+	// recovery the origin Id after upstream.
+	ret.Id = originId
+	state.Req.Id = originId
 	p.transport.Yield(pc)
 
 	rc, ok := dns.RcodeToString[ret.Rcode]
